@@ -1,103 +1,146 @@
-name: Release
-
-permissions:
-  contents: write
-
+name: Build Releases
 on:
   push:
     tags:
-      - v[0-9]+.*
+      - v*
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  create-release:
+  build-cross:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: taiki-e/create-gh-release-action@v1
-        with:
-          # (optional) Path to changelog.
-          changelog: CHANGELOG.md
-          # (required) GitHub token for creating GitHub Releases.
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-  build-binaries:
-    name: "Build binaries"
-    runs-on: ${{ matrix.info.os }}
+    env:
+      RUST_BACKTRACE: full
     strategy:
-      fail-fast: false
       matrix:
-        info:
-          # ======= Supported targets =======
-          # Linux (x64, x86, aarch64)
-          - {
-              os: "ubuntu-latest",
-              target: "x86_64-unknown-linux-gnu",
-              cross: false,
-            }
-          - {
-              os: "ubuntu-latest",
-              target: "i686-unknown-linux-gnu",
-              cross: true,
-            }
-          - {
-              os: "ubuntu-latest",
-              target: "x86_64-unknown-linux-musl",
-              cross: false,
-            }
-          - {
-              os: "ubuntu-latest",
-              target: "i686-unknown-linux-musl",
-              cross: true,
-            }
-          - {
-              os: "ubuntu-latest",
-              target: "aarch64-unknown-linux-gnu",
-              cross: true,
-            }
-          - {
-              os: "ubuntu-latest",
-              target: "aarch64-unknown-linux-musl",
-              cross: true,
-            }
-          # macOS (x64)
-          - { os: "macos-latest", target: "x86_64-apple-darwin", cross: false }
-          # Windows (x64, x86)
-          - {
-              os: "windows-latest",
-              target: "x86_64-pc-windows-msvc",
-              cross: false,
-            }
-          - {
-              os: "windows-latest",
-              target: "i686-pc-windows-msvc",
-              cross: false,
-            }
-          - {
-              os: "windows-latest",
-              target: "x86_64-pc-windows-gnu",
-              cross: false,
-            }
+        target:
+          - i686-unknown-linux-musl
+          - x86_64-pc-windows-gnu
+          - x86_64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+          - armv7-unknown-linux-musleabihf
+          - armv7-unknown-linux-gnueabihf
+          - arm-unknown-linux-gnueabi
+          - arm-unknown-linux-gnueabihf
+          - arm-unknown-linux-musleabi
+          - arm-unknown-linux-musleabihf
+          - aarch64-unknown-linux-gnu
+          - aarch64-unknown-linux-musl
+          - mips-unknown-linux-musl
+          - mips-unknown-linux-gnu
+          - mipsel-unknown-linux-musl
+
     steps:
-      - name: Install pkg-config (Ubuntu)
-        if: matrix.info.os == 'ubuntu-latest'
+      - uses: actions/checkout@v2
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          target: ${{ matrix.target }}
+          toolchain: stable
+          default: true
+          override: true
+
+      - name: Install cross
+        run: cargo install cross
+
+      - name: Build ${{ matrix.target }}
+        timeout-minutes: 120
+        run: |
+          compile_target=${{ matrix.target }}
+
+          if [[ "$compile_target" == *"-linux-"* || "$compile_target" == *"-apple-"* ]]; then
+            compile_features="-f local-redir -f local-tun"
+          fi
+
+          if [[ "$compile_target" == "mips-"* || "$compile_target" == "mipsel-"* || "$compile_target" == "mips64-"* || "$compile_target" == "mips64el-"* ]]; then
+            sudo apt-get update -y && sudo apt-get install -y upx;
+            if [[ "$?" == "0" ]]; then
+              compile_compress="-u"
+            fi
+          fi
+
+          cd build
+          ./build-release -t ${{ matrix.target }} $compile_features $compile_compress
+
+      - name: Upload Github Assets
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: build/release/*
+          prerelease: ${{ contains(github.ref, '-') }}
+
+  build-unix:
+    runs-on: ${{ matrix.os }}
+    env:
+      BUILD_EXTRA_FEATURES: "local-redir local-tun"
+      RUST_BACKTRACE: full
+    strategy:
+      matrix:
+        # os: [ubuntu-latest, macos-latest]
+        os: [macos-latest]
+        target:
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install GNU tar
+        if: runner.os == 'macOS'
+        run: |
+          brew install gnu-tar
+          # echo "::add-path::/usr/local/opt/gnu-tar/libexec/gnubin"
+          echo "/usr/local/opt/gnu-tar/libexec/gnubin" >> $GITHUB_PATH
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          target: ${{ matrix.target }}
+          toolchain: stable
+          default: true
+          override: true
+
+      - name: Build release
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get upgrade
-          sudo apt-get install -y pkg-config libssl-dev
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+          ./build/build-host-release -t ${{ matrix.target }}
+
+      - name: Upload Github Assets
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          toolchain: nightly
-          target: ${{ matrix.info.target }}
+          files: build/release/*
+          prerelease: ${{ contains(github.ref, '-') }}
+
+  build-windows:
+    runs-on: windows-latest
+    env:
+      RUSTFLAGS: "-C target-feature=+crt-static"
+      RUST_BACKTRACE: full
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          default: true
           override: true
-      - uses: actions-rs/cargo@v1
+
+      - name: Build release
+        run: |
+          pwsh ./build/build-host-release.ps1
+
+      - name: Upload Github Assets
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          command: build
-          args: --release --target ${{ matrix.info.target }}
-      - uses: actions/upload-artifact@v2
-        with:
-          name: ${{ matrix.info.target }}
-          path: |
-            target/${{ matrix.info.target }}/release/seam
-            target/${{ matrix.info.target }}/release/seam.exe
+          files: build/release/*
+          prerelease: ${{ contains(github.ref, '-') }}
