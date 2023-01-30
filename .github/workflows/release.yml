@@ -8,11 +8,22 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: taiki-e/create-gh-release-action@v1
+        with:
+          # (optional) Path to changelog.
+          changelog: CHANGELOG.md
+          # (required) GitHub token for creating GitHub Releases.
+          token: ${{ secrets.GITHUB_TOKEN }}
   build-cross:
     runs-on: ubuntu-latest
     env:
       RUST_BACKTRACE: full
     strategy:
+      fail-fast: false
       matrix:
         target:
           - i686-unknown-linux-musl
@@ -63,6 +74,7 @@ jobs:
           fi
 
           cd build
+          chmod +x build-release
           ./build-release -t ${{ matrix.target }} $compile_features $compile_compress
 
       - name: Upload Github Assets
@@ -107,6 +119,7 @@ jobs:
       - name: Build release
         shell: bash
         run: |
+          chmod +x ./build/build-host-release
           ./build/build-host-release -t ${{ matrix.target }}
 
       - name: Upload Github Assets
