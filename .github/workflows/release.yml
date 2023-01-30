@@ -1,0 +1,99 @@
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - v[0-9]+.*
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: taiki-e/create-gh-release-action@v1
+        with:
+          # (optional) Path to changelog.
+          changelog: CHANGELOG.md
+          # (required) GitHub token for creating GitHub Releases.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  build-binaries:
+    name: "Build binaries"
+    runs-on: ${{ matrix.info.os }}
+    container: ${{ matrix.info.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        info:
+          # ======= Supported targets =======
+          # Linux (x64, x86, aarch64)
+          - {
+              os: "ubuntu-20.04",
+              target: "x86_64-unknown-linux-gnu",
+              cross: false,
+            }
+          - {
+              os: "ubuntu-20.04",
+              target: "x86_64-unknown-linux-gnu",
+              cross: false,
+              container: quay.io/pypa/manylinux2014_x86_64,
+              suffix: "2-17",
+            }
+          - {
+              os: "ubuntu-20.04",
+              target: "i686-unknown-linux-gnu",
+              cross: true,
+            }
+          - {
+              os: "ubuntu-20.04",
+              target: "x86_64-unknown-linux-musl",
+              cross: false,
+            }
+          - {
+              os: "ubuntu-20.04",
+              target: "i686-unknown-linux-musl",
+              cross: true,
+            }
+          - {
+              os: "ubuntu-20.04",
+              target: "aarch64-unknown-linux-gnu",
+              cross: true,
+            }
+          - {
+              os: "ubuntu-20.04",
+              target: "aarch64-unknown-linux-musl",
+              cross: true,
+            }
+          # macOS (x64)
+          - { os: "macos-12", target: "x86_64-apple-darwin", cross: false }
+          # Windows (x64, x86)
+          - {
+              os: "windows-2019",
+              target: "x86_64-pc-windows-msvc",
+              cross: false,
+            }
+          - { os: "windows-2019", target: "i686-pc-windows-msvc", cross: false }
+          - {
+              os: "windows-2019",
+              target: "x86_64-pc-windows-gnu",
+              cross: false,
+            }
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          target: ${{ matrix.info.target }}
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --target ${{ matrix.info.target }}
+      - uses: actions/upload-artifact@v2
+        with:
+          name: ${{ matrix.info.target }}
+          path: |
+            target/${{ matrix.info.target }}/release/
