@@ -41,11 +41,12 @@ Write-Host $PackageName
 Write-Host $PackagePath
 
 Push-Location "${PSScriptRoot}\..\target\release"
+Copy-Item "${PSScriptRoot}\..\config.json" -Destination "${PSScriptRoot}\..\target\release"
 
 $ProgressPreference = "SilentlyContinue"
 New-Item "${PackageReleasePath}" -ItemType Directory -ErrorAction SilentlyContinue
 $CompressParam = @{
-    LiteralPath     = "seam.exe"
+    LiteralPath     = "seam.exe", "config.json"
     DestinationPath = "${PackagePath}"
 }
 Compress-Archive @CompressParam
