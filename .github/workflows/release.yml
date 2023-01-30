@@ -86,19 +86,19 @@ jobs:
               cross: false,
             }
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          target: ${{ matrix.info.target }}
-          override: true
       - name: Install pkg-config (Ubuntu)
         if: matrix.info.os == 'ubuntu-latest'
         shell: bash
         run: |
           apt-get update
           apt-get install -y pkg-config
-          apt-get install libssl-dev
+          apt-get install -y libssl-dev
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          target: ${{ matrix.info.target }}
+          override: true
       - uses: actions-rs/cargo@v1
         with:
           command: build
