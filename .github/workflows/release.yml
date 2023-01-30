@@ -90,6 +90,7 @@ jobs:
         if: matrix.info.os == 'ubuntu-latest'
         shell: bash
         run: |
+          sudo apt-get update
           sudo apt-get upgraded
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
